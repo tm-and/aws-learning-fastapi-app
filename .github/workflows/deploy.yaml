@@ -120,8 +120,8 @@ jobs:
             -var="project_name=${{ env.project_name }}" \
             -var="github_repository_owner=${{ github.repository_owner }}" \
             -var="github_repository_name=${{ github.repository }}" \
-            -var="public_subnet_ids_cidr=${{ env.PUBLIC_SUBNET_CIDRS_JSON }}" \
-            -var="private_subnet_ids_cidr=${{ env.PRIVATE_SUBNET_CIDRS_JSON }}"
+            -var='public_subnet_ids_cidr=${{ env.PUBLIC_SUBNET_CIDRS_JSON }}' \
+            -var='private_subnet_ids_cidr=${{ env.PRIVATE_SUBNET_CIDRS_JSON }}'
 
             # `plan` の変更検知のために exit code を出力 (変更なし=0, 変更あり=2, エラー=1)
             TF_PLAN_EXIT_CODE=$?
