@@ -9,6 +9,7 @@ on:
       - main
 
 env:
+  PROJECT_NAME: my-fastapi-app
   AWS_REGION: ap-southeast-2
   ECR_REPOSITORY: my-fastapi-app-app-repo
   PUBLIC_SUBNET_CIDRS_JSON: ${{ toJson(vars.PUBLIC_SUBNET_CIDRS) }}
@@ -117,11 +118,9 @@ jobs:
           terraform plan -out=tfplan \
             -var="aws_account_id=${{ secrets.AWS_ACCOUNT_ID }}" \
             -var="aws_region=${{ env.AWS_REGION }}" \
-            -var="project_name=${{ env.project_name }}" \
+            -var="project_name=${{ env.PROJECT_NAME }}" \
             -var="github_repository_owner=${{ github.repository_owner }}" \
             -var="github_repository_name=${{ github.repository }}" \
-            -var='public_subnet_ids_cidr=${{ env.PUBLIC_SUBNET_CIDRS_JSON }}' \
-            -var='private_subnet_ids_cidr=${{ env.PRIVATE_SUBNET_CIDRS_JSON }}'
 
             # `plan` の変更検知のために exit code を出力 (変更なし=0, 変更あり=2, エラー=1)
             TF_PLAN_EXIT_CODE=$?
