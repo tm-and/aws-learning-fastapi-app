@@ -104,10 +104,18 @@ resource "aws_iam_role" "github_actions_ecr_push_role" {
         }
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" : "sts.amazonaws.com"
+          }
+          # ★ここを修正★
+          # sub 条件をリストにして、複数のパターンを許可する
+          # push イベント (refs/heads/*) と pull_request イベント (refs/pull/*) の両方を許可
           StringLike = {
-            "token.actions.githubusercontent.com:aud" : "sts.amazonaws.com",
-            # 全てのブランチからのビルドを許可する場合
-            "token.actions.githubusercontent.com:sub" : "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/*"
+            "token.actions.githubusercontent.com:sub" : [
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/*", # push 用
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/merge", # PR merge commit 用
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/head" # PR head commit 用
+            ]
           }
         }
       }
