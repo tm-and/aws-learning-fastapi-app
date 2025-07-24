@@ -129,7 +129,14 @@ resource "aws_iam_role_policy" "github_actions_ecr_push_policy" {
       {
         Effect = "Allow"
         Action = [
-          "ecr:GetAuthorizationToken",
+          "ecr:GetAuthorizationToken"
+          # ... 他のECRアクション ...
+        ]
+        Resource = "*" # ★一時的にワイルドカードに変更して試す★
+      },
+      {
+        Effect = "Allow"
+        Action = [
           "ecr:BatchCheckLayerAvailability",
           "ecr:GetDownloadUrlForLayer",
           "ecr:BatchGetImage",
@@ -138,9 +145,7 @@ resource "aws_iam_role_policy" "github_actions_ecr_push_policy" {
           "ecr:CompleteLayerUpload",
           "ecr:PutImage"
         ]
-        # aws_ecr_repository.app_repo が定義されていることを前提としています。
-        # 必要に応じてこのリソース名を変更してください。
-        Resource = aws_ecr_repository.app_repo.arn # 特定のECRリポジトリに限定
+        Resource = aws_ecr_repository.app_repo.arn # 他のプッシュアクションはARNで限定
       }
     ]
   })
