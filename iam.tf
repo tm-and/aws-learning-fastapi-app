@@ -104,7 +104,7 @@ resource "aws_iam_role" "github_actions_ecr_push_role" {
         }
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
-          StringEquals = {
+          StringLike = {
             "token.actions.githubusercontent.com:aud" : "sts.amazonaws.com",
             # 全てのブランチからのビルドを許可する場合
             "token.actions.githubusercontent.com:sub" : "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/*"
