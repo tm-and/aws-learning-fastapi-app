@@ -7,11 +7,13 @@
 variable "github_repository_owner" {
   description = "GitHubリポジトリのオーナー名"
   type        = string
+  default     = "tm-and"
 }
 
 variable "github_repository_name" {
   description = "GitHubリポジトリ名"
   type        = string
+  default     = "aws-learning-fastapi-app"
 }
 
 
