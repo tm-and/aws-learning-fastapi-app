@@ -16,6 +16,11 @@ variable "github_repository_name" {
   default     = "aws-learning-fastapi-app"
 }
 
+variable "aws_account_id" {
+  description = "AWSアカウントID"
+  type        = string
+  default     = "447655429754"
+}
 
 
 # --- OIDC Identity Provider for GitHub ---
