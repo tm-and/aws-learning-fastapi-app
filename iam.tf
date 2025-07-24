@@ -105,7 +105,7 @@ resource "aws_iam_role" "github_actions_ecr_push_role" {
 
           # sub 条件をリストにして、複数のパターンを許可する
           # push イベント (refs/heads/*) と pull_request イベント (refs/pull/*) の両方を許可
-          "ForAnyValue:StringLike" = { # 複数のパターンを許可する際に ForAnyValue:StringLike が推奨されるケースあり
+          StringLike = { # 複数のパターンを許可する際に ForAnyValue:StringLike が推奨されるケースあり
             "token.actions.githubusercontent.com:sub" : [
               "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/*",    # pushイベント（ブランチ）用
               "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/tags/*",     # tagイベント用（必要であれば）
