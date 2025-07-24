@@ -14,6 +14,9 @@ permissions:
   contents: read  # リポジトリのコードを読み込むための権限
 
 jobs:
+  # ======================================================================
+  # Job 1: DockerイメージのビルドとECRへのプッシュ
+  # ======================================================================
   build_and_push:
     name: Build & Push
     runs-on: ubuntu-latest
@@ -45,3 +48,37 @@ jobs:
           # latest タグもプッシュして、ECSサービスが常に最新を参照できるようにする。
           docker buildx build --platform linux/amd64 -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} --push .
           docker buildx build --platform linux/amd64 -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest --push .
+
+
+  # ======================================================================
+  # Job 2 : Terraformのセットアップとバリデーション
+  # ======================================================================
+  validate_infra:
+    name: Validate Infrastructure Code
+    runs-on: ubuntu-latest
+    needs: build_and_push # build_and_push ジョブが成功したら実行
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # --- AWS認証 (OIDC) for Terraform ---
+      # TF_DEPLOY_ROLE_ARN を使う (TFのplan/apply権限を持つロール)
+      - name: Configure AWS Credentials for Terraform
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.TF_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # --- Terraformのセットアップ ---
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      # --- Terraform init ---
+      - name: Terraform init
+        run: terraform init
+
+      # --- Terraform validate (コードの構文チェック) ---
+      - name: Terraform validate
+        run: terraform validate
