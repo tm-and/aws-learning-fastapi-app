@@ -52,16 +52,11 @@ resource "aws_iam_role" "github_actions_tf_deploy_role" {
         }
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
-          StringEquals = {
-            # GitHub Actionsの Issuer と Audience を指定
-            "token.actions.githubusercontent.com:aud" : "sts.amazonaws.com",
-            # リポジトリとブランチを指定して、特定のワークフローからの実行を制限
-            # Pull Request の場合は pull_request イベントのソースブランチを、
-            # Push やマージの場合は main ブランチを指定することが多い
-            "token.actions.githubusercontent.com:sub" : "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/main"
-            # 特定のワークフローや環境に絞ることも可能
-            # "token.actions.githubusercontent.com:sub": "repo:octo-org/octo-repo:environment:production"
-            # "token.actions.githubusercontent.com:sub": "repo:octo-org/octo-repo:ref:refs/heads/main"
+          "ForAnyValue:StringLike" = {
+            "token.actions.githubusercontent.com:sub" : [
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/main", # mainブランチへのプッシュ用
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:pull_request"       # ★ pull_request イベント用（これが重要！）★
+            ]
           }
         }
       }
@@ -107,14 +102,16 @@ resource "aws_iam_role" "github_actions_ecr_push_role" {
           StringEquals = {
             "token.actions.githubusercontent.com:aud" : "sts.amazonaws.com"
           }
-          # ★ここを修正★
+
           # sub 条件をリストにして、複数のパターンを許可する
           # push イベント (refs/heads/*) と pull_request イベント (refs/pull/*) の両方を許可
-          StringLike = {
+          "ForAnyValue:StringLike" = { # 複数のパターンを許可する際に ForAnyValue:StringLike が推奨されるケースあり
             "token.actions.githubusercontent.com:sub" : [
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/*", # push 用
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/merge", # PR merge commit 用
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/head" # PR head commit 用
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/*",    # pushイベント（ブランチ）用
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/tags/*",     # tagイベント用（必要であれば）
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:pull_request",        # ★ pull_request イベント用（これが重要！）★
+              # "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/merge", # こちらも残してもよいが、pull_requestでカバーされることも多い
+              # "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/head" # 同上
             ]
           }
         }
