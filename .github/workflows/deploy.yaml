@@ -1,13 +1,13 @@
-name: Build and Push Docker Image to ECR
+name: Build, Push & Validate Infra
 
 on:
-  push: # コードがプッシュされた時に実行
+  push:
     branches:
-      - main # main ブランチへのプッシュをトリガーとする
+      - main
 
 env:
-  AWS_REGION: ap-southeast-2 # あなたのAWSリージョンに合わせる
-  ECR_REPOSITORY: my-fastapi-app-app-repo # あなたのECRリポジトリ名に合わせる
+  AWS_REGION: ap-southeast-2
+  ECR_REPOSITORY: my-fastapi-app-app-repo
 
 permissions:
   id-token: write # OIDC認証に必要な権限
@@ -25,7 +25,6 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          # Step 1 で作成した ECR Push 用の IAM ロールの ARN を指定
           role-to-assume: ${{ secrets.ECR_PUSH_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
