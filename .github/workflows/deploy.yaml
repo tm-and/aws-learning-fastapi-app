@@ -4,14 +4,20 @@ on:
   push:
     branches:
       - main
+  pull_request: # PR時にもインフラの検証とplanを走らせる
+    branches:
+      - main
 
 env:
   AWS_REGION: ap-southeast-2
   ECR_REPOSITORY: my-fastapi-app-app-repo
+  PUBLIC_SUBNET_CIDRS_JSON: ${{ toJson(vars.PUBLIC_SUBNET_CIDRS) }}
+  PRIVATE_SUBNET_CIDRS_JSON: ${{ toJson(vars.PRIVATE_SUBNET_CIDRS) }}
 
 permissions:
   id-token: write # OIDC認証に必要な権限
   contents: read  # リポジトリのコードを読み込むための権限
+  pull-requests: write # PRにコメントするためにこの権限が必要
 
 jobs:
   # ======================================================================
@@ -51,12 +57,15 @@ jobs:
 
 
   # ======================================================================
-  # Job 2 : Terraformのセットアップとバリデーション
+  # Job 2 : Terraform Plan の実行とPull Requestへのコメント
   # ======================================================================
-  validate_infra:
+  plan_infra:
     name: Validate Infrastructure Code
     runs-on: ubuntu-latest
     needs: build_and_push # build_and_push ジョブが成功したら実行
+    outputs:
+      tf_plan_exit_code: ${{ steps.plan.outputs.exit_code }} # planの実行結果を次のjobに渡す
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -82,3 +91,51 @@ jobs:
       # --- Terraform validate (コードの構文チェック) ---
       - name: Terraform validate
         run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          # public_subnet_ids_cidr と private_subnet_ids_cidr はリストなので、toJson() でJSON文字列に変換して渡す
+          terraform plan -out=tfplan \
+            -var="aws_account_id=${{ secrets.AWS_ACCOUNT_ID }}" \
+            -var="aws_region=${{ env.AWS_REGION }}" \
+            -var="project_name=${{ env.project_name }}" \
+            -var="github_repository_owner=${{ github.repository_owner }}" \
+            -var="github_repository_name=${{ github.repository }}" \
+            -var="public_subnet_ids_cidr=${{ env.PUBLIC_SUBNET_CIDRS_JSON }}" \
+            -var="private_subnet_ids_cidr=${{ env.PRIVATE_SUBNET_CIDRS_JSON }}"
+
+            # `plan` の変更検知のために exit code を出力 (変更なし=0, 変更あり=2, エラー=1)
+            TF_PLAN_EXIT_CODE=$?
+            echo "exit_code=$TF_PLAN_EXIT_CODE" >> $GITHUB_OUTPUT
+
+            if [ $TF_PLAN_EXIT_CODE -eq 1 ]; then
+              echo "Terraform Plan failed."
+              exit 1
+            fi
+
+            # plan の結果をファイルに保存し、後のステップやPRコメントで利用できるようにする
+            # エラー時もファイルが生成されるように || true を追加
+            terraform show -no-color tfplan > tfplan.txt || true
+
+      - name: Upload Terraform Plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-artifact
+          path: tfplan # プランファイルをアーティファクトとして保存
+
+      - name: Add Terraform Plan to Pull Request
+        uses: actions/github-script@v6
+        if: github.event_name == 'pull_request' # PRの場合のみコメント
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('tfplan.txt', 'utf8');
+            const output = `#### Terraform Plan for PR #${{ github.event.pull_request.number }}
+                          \`\`\`terraform\n${plan}\`\`\``;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });

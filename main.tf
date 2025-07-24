@@ -43,13 +43,13 @@ variable "project_name" {
 variable "public_subnet_ids_cidr" {
   description = "パブリックサブネットのCIDRブロックのリスト"
   type        = list(string)
-  default     = ["10.0.1.0/24", "10.0.2.0/24"] # 例: AZごとに1つずつ
+  # default     = ["10.0.1.0/24", "10.0.2.0/24"] # 例: AZごとに1つずつ
 }
 
 variable "private_subnet_ids_cidr" {
   description = "プライベートサブネットのCIDRブロックのリスト"
   type        = list(string)
-  default     = ["10.0.101.0/24", "10.0.102.0/24"] # 例: AZごとに1つずつ
+  # default     = ["10.0.101.0/24", "10.0.102.0/24"] # 例: AZごとに1つずつ
 }
 
 variable "app_image_tag" {
