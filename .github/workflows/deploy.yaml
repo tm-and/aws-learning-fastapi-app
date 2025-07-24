@@ -30,6 +30,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Debug GitHub Context
+        run: |
+          echo "github.ref: ${{ github.ref }}"
+          echo "github.event_name: ${{ github.event_name }}"
+          echo "github.base_ref: ${{ github.base_ref }}" # PRのターゲットブランチ名
+          echo "github.head_ref: ${{ github.head_ref }}" # PRのソースブランチ名
+          # Pull Request イベントの場合のみ、PR固有の情報を表示
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "github.event.pull_request.head.ref: ${{ github.event.pull_request.head.ref }}"
+            echo "github.event.pull_request.base.ref: ${{ github.event.pull_request.base.ref }}"
+            echo "github.event.pull_request.number: ${{ github.event.pull_request.number }}"
+          fi
+          # OIDCトークンの sub を直接確認したい場合 (セキュリティリスクあり、本番では非推奨)
+          # curl -sS ${{ secrets.ACTIONS_ID_TOKEN_REQUEST_URL }} -H "Authorization: bearer ${{ secrets.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}" | jq -r .value | jq -r .payload.sub
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_URL: ${{ secrets.ACTIONS_ID_TOKEN_REQUEST_URL }}
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${{ secrets.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
+
       # --- AWS認証 (OIDC) ---
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
