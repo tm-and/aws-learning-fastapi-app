@@ -127,12 +127,13 @@ resource "aws_iam_role_policy" "github_actions_ecr_push_policy" {
     Version = "2012-10-17"
     Statement = [
       {
+        # ecr:GetAuthorizationToken というIAMアクションが、AWSの設計上、リソースレベルのアクセス許可（特定のECRリポジトリARNを指定すること）をサポートしていない
+        # そのため、 "*"である必要がある
         Effect = "Allow"
         Action = [
           "ecr:GetAuthorizationToken"
-          # ... 他のECRアクション ...
         ]
-        Resource = "*" # ★一時的にワイルドカードに変更して試す★
+        Resource = "*"
       },
       {
         Effect = "Allow"
