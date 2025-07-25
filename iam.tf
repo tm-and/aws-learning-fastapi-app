@@ -52,7 +52,7 @@ resource "aws_iam_role" "github_actions_tf_deploy_role" {
         }
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
-          StringLike = {
+          "ForAnyValue:StringLike" = {
             "token.actions.githubusercontent.com:sub" : [
               "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/main", # mainブランチへのプッシュ用
               "repo:${var.github_repository_owner}/${var.github_repository_name}:pull_request"       # ★ pull_request イベント用（これが重要！）★
@@ -177,7 +177,7 @@ resource "aws_iam_role" "github_actions_ecs_deploy_role" {
 
           # sub 条件をリストにして、複数のパターンを許可する
           # push イベント (refs/heads/*) と pull_request イベント (refs/pull/*) の両方を許可
-          StringLike = {
+          "ForAnyValue:StringLike" = {
             "token.actions.githubusercontent.com:sub" : [
               "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/*",    # pushイベント（ブランチ）用
               "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/tags/*",     # tagイベント用（必要であれば）
