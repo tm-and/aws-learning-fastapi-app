@@ -4,14 +4,22 @@ on:
   push:
     branches:
       - main
+  pull_request: # PR時にもインフラの検証とplanを走らせる
+    branches:
+      - main
 
 env:
+  PROJECT_NAME: my-fastapi-app
   AWS_REGION: ap-southeast-2
   ECR_REPOSITORY: my-fastapi-app-app-repo
+  PUBLIC_SUBNET_CIDRS_JSON: ${{ toJson(vars.PUBLIC_SUBNET_CIDRS) }}
+  PRIVATE_SUBNET_CIDRS_JSON: ${{ toJson(vars.PRIVATE_SUBNET_CIDRS) }}
+  TERRAFORM_VERSION: 1.9.8
 
 permissions:
   id-token: write # OIDC認証に必要な権限
   contents: read  # リポジトリのコードを読み込むための権限
+  pull-requests: write # PRにコメントするためにこの権限が必要
 
 jobs:
   # ======================================================================
@@ -37,26 +45,32 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       # --- Dockerイメージのビルドとプッシュ (X86_64アーキテクチャ) ---
-      - name: Build and push Docker image (X86_64)
+      - name: Build and push Docker image (X86_64) with Commit SHA Tag
         run: |
           # buildx を使用してマルチプラットフォームビルド環境をセットアップ
           docker buildx create --use
           docker buildx inspect --bootstrap
 
           # X86_64 (linux/amd64) 用にビルドし、直接ECRにプッシュ
-          # ${{ github.sha }} は、コミットハッシュを表すGitHub Actionsの組み込み変数。一意なタグとして利用。
-          # latest タグもプッシュして、ECSサービスが常に最新を参照できるようにする。
+          # PR段階ではコミットハッシュタグのみをプッシュ
           docker buildx build --platform linux/amd64 -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} --push .
-          docker buildx build --platform linux/amd64 -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest --push .
+          echo "Pushed image with tag: ${{ github.sha }}" # ログ出力
+
+          # # マージ時には最新タグもプッシュ
+          # docker buildx build --platform linux/amd64 -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest --push .
+          # echo "Pushed image with tag: latest" # ログ出力
 
 
   # ======================================================================
-  # Job 2 : Terraformのセットアップとバリデーション
+  # Job 2 : Terraform Plan の実行とPull Requestへのコメント
   # ======================================================================
-  validate_infra:
-    name: Validate Infrastructure Code
+  plan_infra:
+    name: Plan Infrastructure Changes
     runs-on: ubuntu-latest
-    needs: build_and_push # build_and_push ジョブが成功したら実行
+    needs: build_and_push
+    outputs:
+      tf_plan_exit_code: ${{ steps.plan.outputs.exit_code }} # planの実行結果を次のjobに渡す
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -73,7 +87,7 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.8
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
 
       # --- Terraform init ---
       - name: Terraform init
@@ -82,3 +96,114 @@ jobs:
       # --- Terraform validate (コードの構文チェック) ---
       - name: Terraform validate
         run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          # public_subnet_ids_cidr と private_subnet_ids_cidr はリストなので、toJson() でJSON文字列に変換して渡す
+          terraform plan -out=tfplan \
+            -var="aws_account_id=${{ secrets.AWS_ACCOUNT_ID }}" \
+            -var="aws_region=${{ env.AWS_REGION }}" \
+            -var="project_name=${{ env.PROJECT_NAME }}" \
+            -var="github_repository_owner=${{ github.repository_owner }}" \
+            -var="github_repository_name=${{ github.repository }}" \
+
+            # `plan` の変更検知のために exit code を出力 (変更なし=0, 変更あり=2, エラー=1)
+            TF_PLAN_EXIT_CODE=$?
+            echo "exit_code=$TF_PLAN_EXIT_CODE" >> $GITHUB_OUTPUT
+
+            if [ $TF_PLAN_EXIT_CODE -eq 1 ]; then
+              echo "Terraform Plan failed."
+              exit 1
+            fi
+
+          # terraform show の結果をファイルに保存
+          terraform show -no-color tfplan > tfplan.txt || true
+
+      - name: Upload Terraform Plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-artifact
+          path: tfplan # プランファイルをアーティファクトとして保存
+
+      - name: Add Terraform Plan to Pull Request
+        uses: actions/github-script@v6
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('tfplan.txt', 'utf8');
+
+            // チーム開発の際は、以下を別ファイルに保存して、URL遷移させるか、Claude Code SDKなどを使ってSummarizeさせた方が良い。
+            // Plan結果は非常に長いため、PRにコメントさせると見づらいため
+
+            // const output = `#### Terraform Plan for PR #${{ github.event.pull_request.number }}
+            //              \`\`\`terraform\n${plan}\`\`\``;
+            // github.rest.issues.createComment({
+            //   issue_number: context.issue.number,
+            //   owner: context.repo.owner,
+            //   repo: context.repo.repo,
+            //   body: output
+            // });
+
+
+# ======================================================================
+# Job 3 : Terraform Apply と ECS サービス強制デプロイ
+# ======================================================================
+  apply_infra:
+    name: Apply Infrastructure Changes
+    runs-on: ubuntu-latest
+    needs: plan_infra
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Terraform Plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-artifact # plan ジョブでアップロードしたアーティファクト名
+          path: . # カレントディレクトリにダウンロード (tfplan ファイルが置かれる)
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      # --- AWS認証 (OIDC) for Terraform ---
+      - name: Configure AWS Credentials for Terraform Apply
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.TF_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform init (for apply)
+        run: terraform init
+
+      - name: Terraform Apply
+        run: |
+          # planで生成した tfplan ファイルを適用する
+          # `-auto-approve` を付けることで、コマンドラインでの承認をスキップします。
+          # GitHub環境の承認ルールが有効なため、このステップが実行される前に手動承認が必要です。
+          terraform apply -auto-approve tfplan
+
+      # --- AWS認証 (OIDC) for ECS Update (ECR Push ロールを再利用) ---
+      # ECSサービスを強制的に再デプロイするために、ECRプッシュと同じロールを再利用
+      - name: Configure AWS Credentials for ECS Update
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ECS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Force new ECS deployment
+        run: |
+          # Terraform apply でタスク定義の変更が自動的にデプロイされるはずですが、
+          # `latest` タグを使用している場合など、ECSサービスが新しいイメージをプルしない場合があるため、
+          # 明示的に強制デプロイをトリガーするのが堅牢です。
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER_NAME }} \
+            --service ${{ env.ECS_SERVICE_NAME }} \
+            --force-new-deployment
