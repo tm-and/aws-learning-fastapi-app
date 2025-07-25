@@ -14,6 +14,7 @@ env:
   ECR_REPOSITORY: my-fastapi-app-app-repo
   PUBLIC_SUBNET_CIDRS_JSON: ${{ toJson(vars.PUBLIC_SUBNET_CIDRS) }}
   PRIVATE_SUBNET_CIDRS_JSON: ${{ toJson(vars.PRIVATE_SUBNET_CIDRS) }}
+  TERRAFORM_VERSION: 1.9.8
 
 permissions:
   id-token: write # OIDC認証に必要な権限
@@ -62,7 +63,7 @@ jobs:
   # Job 2 : Terraform Plan の実行とPull Requestへのコメント
   # ======================================================================
   plan_infra:
-    name: Validate Infrastructure Code
+    name: Plan Infrastructure Changes
     runs-on: ubuntu-latest
     needs: build_and_push # build_and_push ジョブが成功したら実行
     outputs:
@@ -84,7 +85,7 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.8
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
 
       # --- Terraform init ---
       - name: Terraform init
@@ -114,9 +115,46 @@ jobs:
               exit 1
             fi
 
-            # plan の結果をファイルに保存し、後のステップやPRコメントで利用できるようにする
-            # エラー時もファイルが生成されるように || true を追加
-            terraform show -no-color tfplan > tfplan.txt || true
+            # terraform show の結果をファイルに保存
+          terraform show -no-color tfplan > tfplan.txt || true
+
+          # 変更されたリソースのサマリを取得（オプション、より高度なjqなどが必要）
+          # changes=$(terraform show -json tfplan | jq -r '(.resource_changes | map(.change.actions[]))' | sort | uniq -c)
+          # summary="Changes: ${changes}"
+          summary="Terraform Plan completed. See attached artifact for full details."
+
+          # GitHub Script でコメントを投稿
+          echo "output=${summary}" >> $GITHUB_OUTPUT # ここではサマリを出力する例
+
+      # Add Terraform Plan to Pull Request
+      # (このステップはそのまま。tfplan.txtの内容をコメントする)
+      - name: Add Terraform Plan to Pull Request
+        uses: actions/github-script@v6
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+            const planDetails = fs.readFileSync('tfplan.txt', 'utf8');
+            // サマリのみをコメントする場合（詳細をアーティファクトに誘導）
+            const commentBody = `#### Terraform Plan for PR #${{ github.event.pull_request.number }}
+                              \`\`\`terraform
+                              Terraform Plan has been generated.
+                              \`\`\`
+
+                              Changes summary:
+                              \`\`\`
+                              ${planDetails.split('\n').filter(line => line.includes('plan:')).join('\n')}
+                              \`\`\`
+
+                              For full plan details, please download the \`tfplan-artifact\` from the workflow run results.
+                              \`\`\`
+                              `;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: commentBody
+            });
 
       - name: Upload Terraform Plan artifact
         uses: actions/upload-artifact@v4
