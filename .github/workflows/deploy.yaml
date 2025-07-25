@@ -145,3 +145,65 @@ jobs:
             //   repo: context.repo.repo,
             //   body: output
             // });
+
+
+# ======================================================================
+# Job 3 : Terraform Apply と ECS サービス強制デプロイ
+# ======================================================================
+  apply_infra:
+    name: Apply Infrastructure Changes
+    runs-on: ubuntu-latest
+    needs: plan_infra
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Terraform Plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-artifact # plan ジョブでアップロードしたアーティファクト名
+          path: . # カレントディレクトリにダウンロード (tfplan ファイルが置かれる)
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      # --- AWS認証 (OIDC) for Terraform ---
+      - name: Configure AWS Credentials for Terraform Apply
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.TF_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform init (for apply)
+        run: terraform init
+
+      - name: Terraform Apply
+        run: |
+          # planで生成した tfplan ファイルを適用する
+          # `-auto-approve` を付けることで、コマンドラインでの承認をスキップします。
+          # GitHub環境の承認ルールが有効なため、このステップが実行される前に手動承認が必要です。
+          terraform apply -auto-approve tfplan
+
+      # --- AWS認証 (OIDC) for ECS Update (ECR Push ロールを再利用) ---
+      # ECSサービスを強制的に再デプロイするために、ECRプッシュと同じロールを再利用
+      - name: Configure AWS Credentials for ECS Update
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ECS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Force new ECS deployment
+        run: |
+          # Terraform apply でタスク定義の変更が自動的にデプロイされるはずですが、
+          # `latest` タグを使用している場合など、ECSサービスが新しいイメージをプルしない場合があるため、
+          # 明示的に強制デプロイをトリガーするのが堅牢です。
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER_NAME }} \
+            --service ${{ env.ECS_SERVICE_NAME }} \
+            --force-new-deployment
