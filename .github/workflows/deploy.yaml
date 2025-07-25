@@ -190,8 +190,7 @@ jobs:
           # GitHub環境の承認ルールが有効なため、このステップが実行される前に手動承認が必要です。
           terraform apply -auto-approve tfplan
 
-      # --- AWS認証 (OIDC) for ECS Update (ECR Push ロールを再利用) ---
-      # ECSサービスを強制的に再デプロイするために、ECRプッシュと同じロールを再利用
+      # --- AWS認証 (OIDC) for ECS Update ---
       - name: Configure AWS Credentials for ECS Update
         uses: aws-actions/configure-aws-credentials@v4
         with:
