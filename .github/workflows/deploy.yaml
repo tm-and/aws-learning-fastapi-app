@@ -173,6 +173,14 @@ jobs:
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
 
+
+      - name: Print OIDC token claims
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_URL: ${{ steps.aws-configure.outputs.id-token-request-url }} # configure-aws-credentials の出力に依存
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${{ steps.aws-configure.outputs.id-token-request-token }} # configure-aws-credentials の出力に依存
+        run: |
+          curl --request POST --url $ACTIONS_ID_TOKEN_REQUEST_URL --header "Accept: application/json" --header "Content-Type: application/json" --header "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" --silent | jq '. || ""' | grep sub || echo "Sub claim not found"
+
       # --- AWS認証 (OIDC) for Terraform ---
       - name: Configure AWS Credentials for Terraform Apply
         uses: aws-actions/configure-aws-credentials@v4
