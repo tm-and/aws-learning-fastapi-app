@@ -52,10 +52,28 @@ resource "aws_iam_role" "github_actions_tf_deploy_role" {
         }
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
+          # ★ここを修正★
+          # StringEquals を使って aud (Audience) 条件を必ず含める
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" : "sts.amazonaws.com"
+          },
+          # ForAnyValue:StringLike で sub (Subject) 条件のパターンを網羅する
           "ForAnyValue:StringLike" = {
             "token.actions.githubusercontent.com:sub" : [
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/main", # mainブランチへのプッシュ用
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:pull_request"       # ★ pull_request イベント用（これが重要！）★
+              # main ブランチへの通常の push
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/main",
+
+              # Pull Request (PR) イベントの一般的なパターン (head ブランチのref)
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/head",
+
+              # Pull Request のマージコミットの ref パターン
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/merge",
+
+              # pull_request イベント時に使用される可能性のある別の sub クレームのパターン
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:pull_request"
+
+              # もしタグ付けデプロイも行うなら以下も追加
+              # "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/tags/*"
             ]
           }
         }
