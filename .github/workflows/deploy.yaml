@@ -32,7 +32,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-
       # --- AWS認証 (OIDC) ---
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -46,17 +45,20 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       # --- Dockerイメージのビルドとプッシュ (X86_64アーキテクチャ) ---
-      - name: Build and push Docker image (X86_64)
+      - name: Build and push Docker image (X86_64) with Commit SHA Tag
         run: |
           # buildx を使用してマルチプラットフォームビルド環境をセットアップ
           docker buildx create --use
           docker buildx inspect --bootstrap
 
           # X86_64 (linux/amd64) 用にビルドし、直接ECRにプッシュ
-          # ${{ github.sha }} は、コミットハッシュを表すGitHub Actionsの組み込み変数。一意なタグとして利用。
-          # latest タグもプッシュして、ECSサービスが常に最新を参照できるようにする。
+          # PR段階ではコミットハッシュタグのみをプッシュ
           docker buildx build --platform linux/amd64 -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} --push .
-          docker buildx build --platform linux/amd64 -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest --push .
+          echo "Pushed image with tag: ${{ github.sha }}" # ログ出力
+
+          # # マージ時には最新タグもプッシュ
+          # docker buildx build --platform linux/amd64 -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest --push .
+          # echo "Pushed image with tag: latest" # ログ出力
 
 
   # ======================================================================
@@ -65,7 +67,7 @@ jobs:
   plan_infra:
     name: Plan Infrastructure Changes
     runs-on: ubuntu-latest
-    needs: build_and_push # build_and_push ジョブが成功したら実行
+    needs: build_and_push
     outputs:
       tf_plan_exit_code: ${{ steps.plan.outputs.exit_code }} # planの実行結果を次のjobに渡す
 
@@ -115,46 +117,8 @@ jobs:
               exit 1
             fi
 
-            # terraform show の結果をファイルに保存
+          # terraform show の結果をファイルに保存
           terraform show -no-color tfplan > tfplan.txt || true
-
-          # 変更されたリソースのサマリを取得（オプション、より高度なjqなどが必要）
-          # changes=$(terraform show -json tfplan | jq -r '(.resource_changes | map(.change.actions[]))' | sort | uniq -c)
-          # summary="Changes: ${changes}"
-          summary="Terraform Plan completed. See attached artifact for full details."
-
-          # GitHub Script でコメントを投稿
-          echo "output=${summary}" >> $GITHUB_OUTPUT # ここではサマリを出力する例
-
-      # Add Terraform Plan to Pull Request
-      # (このステップはそのまま。tfplan.txtの内容をコメントする)
-      - name: Add Terraform Plan to Pull Request
-        uses: actions/github-script@v6
-        if: github.event_name == 'pull_request'
-        with:
-          script: |
-            const fs = require('fs');
-            const planDetails = fs.readFileSync('tfplan.txt', 'utf8');
-            // サマリのみをコメントする場合（詳細をアーティファクトに誘導）
-            const commentBody = `#### Terraform Plan for PR #${{ github.event.pull_request.number }}
-                              \`\`\`terraform
-                              Terraform Plan has been generated.
-                              \`\`\`
-
-                              Changes summary:
-                              \`\`\`
-                              ${planDetails.split('\n').filter(line => line.includes('plan:')).join('\n')}
-                              \`\`\`
-
-                              For full plan details, please download the \`tfplan-artifact\` from the workflow run results.
-                              \`\`\`
-                              `;
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: commentBody
-            });
 
       - name: Upload Terraform Plan artifact
         uses: actions/upload-artifact@v4
@@ -164,16 +128,20 @@ jobs:
 
       - name: Add Terraform Plan to Pull Request
         uses: actions/github-script@v6
-        if: github.event_name == 'pull_request' # PRの場合のみコメント
+        if: github.event_name == 'pull_request'
         with:
           script: |
             const fs = require('fs');
             const plan = fs.readFileSync('tfplan.txt', 'utf8');
-            const output = `#### Terraform Plan for PR #${{ github.event.pull_request.number }}
-                          \`\`\`terraform\n${plan}\`\`\``;
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: output
-            });
+
+            # チーム開発の際は、以下を別ファイルに保存して、URL遷移させるか、Claude Code SDKなどを使ってSummarizeさせた方が良い。
+            # Plan結果は非常に長いため、PRにコメントさせると見づらいため
+
+            # const output = `#### Terraform Plan for PR #${{ github.event.pull_request.number }}
+            #               \`\`\`terraform\n${plan}\`\`\``;
+            # github.rest.issues.createComment({
+            #   issue_number: context.issue.number,
+            #   owner: context.repo.owner,
+            #   repo: context.repo.repo,
+            #   body: output
+            # });
