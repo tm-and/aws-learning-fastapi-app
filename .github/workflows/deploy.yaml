@@ -134,14 +134,14 @@ jobs:
             const fs = require('fs');
             const plan = fs.readFileSync('tfplan.txt', 'utf8');
 
-            # チーム開発の際は、以下を別ファイルに保存して、URL遷移させるか、Claude Code SDKなどを使ってSummarizeさせた方が良い。
-            # Plan結果は非常に長いため、PRにコメントさせると見づらいため
+            // チーム開発の際は、以下を別ファイルに保存して、URL遷移させるか、Claude Code SDKなどを使ってSummarizeさせた方が良い。
+            // Plan結果は非常に長いため、PRにコメントさせると見づらいため
 
-            # const output = `#### Terraform Plan for PR #${{ github.event.pull_request.number }}
-            #               \`\`\`terraform\n${plan}\`\`\``;
-            # github.rest.issues.createComment({
-            #   issue_number: context.issue.number,
-            #   owner: context.repo.owner,
-            #   repo: context.repo.repo,
-            #   body: output
-            # });
+            // const output = `#### Terraform Plan for PR #${{ github.event.pull_request.number }}
+            //              \`\`\`terraform\n${plan}\`\`\``;
+            // github.rest.issues.createComment({
+            //   issue_number: context.issue.number,
+            //   owner: context.repo.owner,
+            //   repo: context.repo.repo,
+            //   body: output
+            // });
