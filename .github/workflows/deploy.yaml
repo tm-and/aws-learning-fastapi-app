@@ -28,6 +28,8 @@ jobs:
   build_and_push:
     name: Build & Push
     runs-on: ubuntu-latest
+    outputs:
+      registry: ${{ steps.login-ecr.outputs.registry }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -69,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build_and_push
     outputs:
-      tf_plan_exit_code: ${{ steps.plan.outputs.exit_code }} # planの実行結果を次のjobに渡す
+      tf_plan_exit_code: ${{ steps.plan.outputs.exit_code }}
 
     steps:
       - name: Checkout code
@@ -200,6 +202,7 @@ jobs:
       # --- AWS認証 (OIDC) for Terraform ---
       - name: Configure AWS Credentials for Terraform Apply
         uses: aws-actions/configure-aws-credentials@v4
+        id: aws-credentials-for-debug
         with:
           role-to-assume: ${{ secrets.TF_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -216,6 +219,8 @@ jobs:
 
       # --- Dockerイメージのビルドとプッシュ (X86_64アーキテクチャ) ---
       - name: Build and push Docker image (X86_64) with Commit SHA Tag
+        env:
+          ECR_REGISTRY_URL: ${{ needs.build_and_push.outputs.registry }}
         run: |
           # buildx を使用してマルチプラットフォームビルド環境をセットアップ
           docker buildx create --use
@@ -223,12 +228,8 @@ jobs:
 
           # X86_64 (linux/amd64) 用にビルドし、直接ECRにプッシュ
           # PR段階ではコミットハッシュタグのみをプッシュ
-          docker buildx build --platform linux/amd64 -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} --push .
-          echo "Pushed image with tag: ${{ github.sha }}" # ログ出力
-
-          # # マージ時には最新タグもプッシュ
-          # docker buildx build --platform linux/amd64 -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest --push .
-          # echo "Pushed image with tag: latest" # ログ出力
+          docker buildx build --platform linux/amd64 -t ${{ env.ECR_REGISTRY_URL }}/${{ env.ECR_REPOSITORY }}:latest --push .
+          echo "Pushed image with tag: latest" # ログ出力
 
       # --- AWS認証 (OIDC) for ECS Update ---
       - name: Configure AWS Credentials for ECS Update
