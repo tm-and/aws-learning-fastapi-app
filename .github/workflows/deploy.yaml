@@ -167,25 +167,28 @@ jobs:
       - name: Download Terraform Plan artifact
         uses: actions/download-artifact@v4
         with:
-          name: tfplan-artifact # plan ジョブでアップロードしたアーティファクト名
-          path: . # カレントディレクトリにダウンロード (tfplan ファイルが置かれる)
+          name: tfplan-artifact
+          path: .
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
 
+      # --- デバッグステップ (OIDCトークン確認) は残しつつ、aws-credentials の id を修正 ---
+      - name: Configure AWS Credentials for Terraform Apply
+        id: aws-credentials-for-apply # ここに id を付与
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.TF_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Print OIDC token claims
         env:
-          ACTIONS_ID_TOKEN_REQUEST_URL: ${{ steps.aws-configure.outputs.id-token-request-url }} # configure-aws-credentials の出力に依存
-          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${{ steps.aws-configure.outputs.id-token-request-token }} # configure-aws-credentials の出力に依存
+          ACTIONS_ID_TOKEN_REQUEST_URL: ${{ steps.aws-credentials-for-apply.outputs.id-token-request-url }}
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${{ steps.aws-credentials-for-apply.outputs.id-token-request-token }}
         run: |
           echo "Attempting to get OIDC token payload..."
-
-          # curl で取得したJSONから、OIDCトークンの `value` (Base64エンコードされたJWT) を取得し、
-          # そのJWTをデコードして `payload.sub` を抽出する
-          # デコードには base64 と jq が必要
           TOKEN_PAYLOAD=$(curl --request POST --url "$ACTIONS_ID_TOKEN_REQUEST_URL" \
             --header "Accept: application/json" \
             --header "Content-Type: application/json" \
@@ -198,38 +201,46 @@ jobs:
             echo "OIDC Token Sub Claim: $TOKEN_PAYLOAD"
           fi
           echo "Finished getting OIDC token payload."
-
-      # --- AWS認証 (OIDC) for Terraform ---
-      - name: Configure AWS Credentials for Terraform Apply
-        uses: aws-actions/configure-aws-credentials@v4
-        id: aws-credentials-for-debug
-        with:
-          role-to-assume: ${{ secrets.TF_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+      # --- ここまでOIDCデバッグステップ ---
 
       - name: Terraform init (for apply)
         run: terraform init
 
       - name: Terraform Apply
         run: |
-          # planで生成した tfplan ファイルを適用する
-          # `-auto-approve` を付けることで、コマンドラインでの承認をスキップします。
-          # GitHub環境の承認ルールが有効なため、このステップが実行される前に手動承認が必要です。
           terraform apply -auto-approve tfplan
 
-      # --- Dockerイメージのビルドとプッシュ (X86_64アーキテクチャ) ---
-      - name: Build and push Docker image (X86_64) with Commit SHA Tag
-        env:
-          ECR_REGISTRY_URL: ${{ needs.build_and_push.outputs.registry }}
+      # ========================================================================================
+      # ★ここから Docker イメージのビルドとプッシュ (Latest Tag) ★
+      # ★ECRログインと認証をこのジョブ内で再度行う必要がある★
+      # ========================================================================================
+
+      # --- AWS認証 (OIDC) for ECR Push (Latest) ---
+      # TF_DEPLOY_ROLE_ARN ではなく ECR_PUSH_ROLE_ARN を使う
+      - name: Configure AWS Credentials for ECR Push (Latest)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.ECR_PUSH_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # --- ECRへのログイン (Latest Push用) ---
+      # 新しいidを付与
+      - name: Login to Amazon ECR (Latest Push)
+        id: login-ecr-for-latest-push # ★新しいidを付与★
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image (X86_64) with Latest Tag
         run: |
-          # buildx を使用してマルチプラットフォームビルド環境をセットアップ
           docker buildx create --use
           docker buildx inspect --bootstrap
 
-          # X86_64 (linux/amd64) 用にビルドし、直接ECRにプッシュ
-          # PR段階ではコミットハッシュタグのみをプッシュ
-          docker buildx build --platform linux/amd64 -t ${{ env.ECR_REGISTRY_URL }}/${{ env.ECR_REPOSITORY }}:latest --push .
-          echo "Pushed image with tag: latest" # ログ出力
+          # ★login-ecr-for-latest-push の output を参照する★
+          docker buildx build --platform linux/amd64 -t ${{ steps.login-ecr-for-latest-push.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest --push .
+          echo "Pushed image with tag: latest"
+
+      # ========================================================================================
+      # ★ECSサービス強制デプロイの認証と実行★
+      # ========================================================================================
 
       # --- AWS認証 (OIDC) for ECS Update ---
       - name: Configure AWS Credentials for ECS Update
@@ -240,9 +251,6 @@ jobs:
 
       - name: Force new ECS deployment
         run: |
-          # Terraform apply でタスク定義の変更が自動的にデプロイされるはずですが、
-          # `latest` タグを使用している場合など、ECSサービスが新しいイメージをプルしない場合があるため、
-          # 明示的に強制デプロイをトリガーするのが堅牢です。
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER_NAME }} \
             --service ${{ env.ECS_SERVICE_NAME }} \
