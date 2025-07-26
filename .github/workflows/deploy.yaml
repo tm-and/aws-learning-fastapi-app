@@ -179,7 +179,23 @@ jobs:
           ACTIONS_ID_TOKEN_REQUEST_URL: ${{ steps.aws-configure.outputs.id-token-request-url }} # configure-aws-credentials の出力に依存
           ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${{ steps.aws-configure.outputs.id-token-request-token }} # configure-aws-credentials の出力に依存
         run: |
-          curl --request POST --url $ACTIONS_ID_TOKEN_REQUEST_URL --header "Accept: application/json" --header "Content-Type: application/json" --header "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" --silent | jq '. || ""' | grep sub || echo "Sub claim not found"
+          echo "Attempting to get OIDC token payload..."
+
+          # curl で取得したJSONから、OIDCトークンの `value` (Base64エンコードされたJWT) を取得し、
+          # そのJWTをデコードして `payload.sub` を抽出する
+          # デコードには base64 と jq が必要
+          TOKEN_PAYLOAD=$(curl --request POST --url "$ACTIONS_ID_TOKEN_REQUEST_URL" \
+            --header "Accept: application/json" \
+            --header "Content-Type: application/json" \
+            --header "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            --silent | jq -r '.value' | awk -F'.' '{print $2}' | base64 --decode 2>/dev/null | jq -r '.sub')
+
+          if [ -z "$TOKEN_PAYLOAD" ]; then
+            echo "Sub claim not found or failed to decode token."
+          else
+            echo "OIDC Token Sub Claim: $TOKEN_PAYLOAD"
+          fi
+          echo "Finished getting OIDC token payload."
 
       # --- AWS認証 (OIDC) for Terraform ---
       - name: Configure AWS Credentials for Terraform Apply
@@ -197,6 +213,22 @@ jobs:
           # `-auto-approve` を付けることで、コマンドラインでの承認をスキップします。
           # GitHub環境の承認ルールが有効なため、このステップが実行される前に手動承認が必要です。
           terraform apply -auto-approve tfplan
+
+      # --- Dockerイメージのビルドとプッシュ (X86_64アーキテクチャ) ---
+      - name: Build and push Docker image (X86_64) with Commit SHA Tag
+        run: |
+          # buildx を使用してマルチプラットフォームビルド環境をセットアップ
+          docker buildx create --use
+          docker buildx inspect --bootstrap
+
+          # X86_64 (linux/amd64) 用にビルドし、直接ECRにプッシュ
+          # PR段階ではコミットハッシュタグのみをプッシュ
+          docker buildx build --platform linux/amd64 -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} --push .
+          echo "Pushed image with tag: ${{ github.sha }}" # ログ出力
+
+          # # マージ時には最新タグもプッシュ
+          # docker buildx build --platform linux/amd64 -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest --push .
+          # echo "Pushed image with tag: latest" # ログ出力
 
       # --- AWS認証 (OIDC) for ECS Update ---
       - name: Configure AWS Credentials for ECS Update
