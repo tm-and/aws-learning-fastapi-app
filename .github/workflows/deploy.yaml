@@ -214,6 +214,22 @@ jobs:
           # GitHub環境の承認ルールが有効なため、このステップが実行される前に手動承認が必要です。
           terraform apply -auto-approve tfplan
 
+      # --- Dockerイメージのビルドとプッシュ (X86_64アーキテクチャ) ---
+      - name: Build and push Docker image (X86_64) with Commit SHA Tag
+        run: |
+          # buildx を使用してマルチプラットフォームビルド環境をセットアップ
+          docker buildx create --use
+          docker buildx inspect --bootstrap
+
+          # X86_64 (linux/amd64) 用にビルドし、直接ECRにプッシュ
+          # PR段階ではコミットハッシュタグのみをプッシュ
+          docker buildx build --platform linux/amd64 -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} --push .
+          echo "Pushed image with tag: ${{ github.sha }}" # ログ出力
+
+          # # マージ時には最新タグもプッシュ
+          # docker buildx build --platform linux/amd64 -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest --push .
+          # echo "Pushed image with tag: latest" # ログ出力
+
       # --- AWS認証 (OIDC) for ECS Update ---
       - name: Configure AWS Credentials for ECS Update
         uses: aws-actions/configure-aws-credentials@v4
