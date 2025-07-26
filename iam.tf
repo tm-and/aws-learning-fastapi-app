@@ -7,13 +7,11 @@
 variable "github_repository_owner" {
   description = "GitHubリポジトリのオーナー名"
   type        = string
-  default     = "tm-and"
 }
 
 variable "github_repository_name" {
   description = "GitHubリポジトリ名"
   type        = string
-  default     = "aws-learning-fastapi-app"
 }
 
 variable "aws_account_id" {
@@ -127,11 +125,7 @@ resource "aws_iam_role" "github_actions_ecr_push_role" {
           StringLike = {
             "token.actions.githubusercontent.com:sub" : [
               "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/*", # pushイベント（ブランチ）用
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/tags/*",  # tagイベント用（必要であれば）
               "repo:${var.github_repository_owner}/${var.github_repository_name}:pull_request",     # ★ pull_request イベント用（これが重要！）★
-              # "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/merge", # こちらも残してもよいが、pull_requestでカバーされることも多い
-              # "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/head" # 同上
-              # ★ここを追加★
               # environment が指定されたジョブで発行される OIDC トークンの sub パターン
               "repo:${var.github_repository_owner}/${var.github_repository_name}:environment:production"
             ]
