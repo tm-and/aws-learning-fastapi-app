@@ -9,14 +9,13 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-    # Docker Provider は、ECRリポジトリURIの参照には直接使いませんが、
-    # local-exec で docker build/push を実行する場合などに必要になります。
-    # 今回のコードでは、TerraformのECRリポジトリリソースと、
-    # Terraformで作成されるECRリポジトリURIを参照するため、provider "docker" は必須ではありません。
-    # docker = {
-    #   source  = "kreuzwerker/docker"
-    #   version = "~> 2.20"
-    # }
+  }
+  backend "s3" {
+    bucket         = "my-fastapi-app-terraform-state-unique-name" # ★手順1で作成したS3バケット名に置き換える★
+    key            = "terraform.tfstate"                          # Stateファイルの名前
+    region         = "ap-southeast-2"                             # あなたのAWSリージョンに合わせる
+    dynamodb_table = "my-fastapi-app-terraform-lock"
+    encrypt        = true # Stateファイルを暗号化
   }
 }
 
@@ -109,9 +108,9 @@ resource "aws_nat_gateway" "nat_gw" {
 
 # --- Public Subnets ---
 resource "aws_subnet" "public_subnet" {
-  count             = length(var.public_subnet_ids_cidr)
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = element(var.public_subnet_ids_cidr, count.index)
+  count      = length(var.public_subnet_ids_cidr)
+  vpc_id     = aws_vpc.main.id
+  cidr_block = element(var.public_subnet_ids_cidr, count.index)
   # Availability Zone をローテートさせる (例: ap-northeast-1a, ap-northeast-1b)
   availability_zone = element(data.aws_availability_zones.available.names, count.index)
 
@@ -124,9 +123,9 @@ resource "aws_subnet" "public_subnet" {
 
 # --- Private Subnets ---
 resource "aws_subnet" "private_subnet" {
-  count             = length(var.private_subnet_ids_cidr)
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = element(var.private_subnet_ids_cidr, count.index)
+  count      = length(var.private_subnet_ids_cidr)
+  vpc_id     = aws_vpc.main.id
+  cidr_block = element(var.private_subnet_ids_cidr, count.index)
   # Public subnet とは異なる AZ を割り当てる (例: public は a, b なら private は b, c)
   availability_zone = element(data.aws_availability_zones.available.names, count.index + length(var.public_subnet_ids_cidr))
 
@@ -221,9 +220,9 @@ resource "aws_security_group" "ecs_task_sg" {
   vpc_id      = aws_vpc.main.id # Terraformで作成したVPCを参照
 
   ingress {
-    from_port   = 8000 # FastAPIがリッスンするポート
-    to_port     = 8000
-    protocol    = "tcp"
+    from_port = 8000 # FastAPIがリッスンするポート
+    to_port   = 8000
+    protocol  = "tcp"
     # ALBのセキュリティグループからのトラフィックのみを許可
     security_groups = [aws_security_group.alb_sg.id]
   }
@@ -309,7 +308,7 @@ resource "aws_ecr_repository" "app_repo" {
   name = "${var.project_name}-app-repo"
 
   image_tag_mutability = "MUTABLE"
-  
+
 
   image_scanning_configuration {
     scan_on_push = true
@@ -341,8 +340,8 @@ resource "aws_ecs_task_definition" "app_task_def" {
   execution_role_arn = aws_iam_role.ecs_task_execution_role.arn # Task Execution Role (Fargateで必須)
   network_mode       = "awsvpc"
 
-  cpu    = "256"    # 0.25 vCPU
-  memory = "512"    # 512 MB
+  cpu    = "256" # 0.25 vCPU
+  memory = "512" # 512 MB
 
   runtime_platform {
     cpu_architecture        = "X86_64" # <-- ここでX86_64を指定
@@ -373,9 +372,9 @@ resource "aws_ecs_task_definition" "app_task_def" {
       logConfiguration = {
         logDriver = "awslogs",
         options = {
-          "awslogs-group"        = "/ecs/${var.project_name}-app-container",
-          "awslogs-create-group" = "true",
-          "awslogs-region"       = var.aws_region,
+          "awslogs-group"         = "/ecs/${var.project_name}-app-container",
+          "awslogs-create-group"  = "true",
+          "awslogs-region"        = var.aws_region,
           "awslogs-stream-prefix" = "ecs"
         }
       }
@@ -394,8 +393,8 @@ resource "aws_ecs_service" "app_service" {
   network_configuration {
     assign_public_ip = false # プライベートサブネットに配置するため
     # Terraformで作成したプライベートサブネットを参照
-    subnets          = [for subnet in aws_subnet.private_subnet : subnet.id]
-    security_groups  = [aws_security_group.ecs_task_sg.id]
+    subnets         = [for subnet in aws_subnet.private_subnet : subnet.id]
+    security_groups = [aws_security_group.ecs_task_sg.id]
   }
 
   load_balancer {
@@ -406,7 +405,7 @@ resource "aws_ecs_service" "app_service" {
 
   # Circuit Breaker設定
   deployment_circuit_breaker {
-    enable = true
+    enable   = true
     rollback = true
   }
 
@@ -465,7 +464,7 @@ resource "aws_lb" "app_alb" {
   name               = "${var.project_name}-alb"
   internal           = false
   load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb_sg.id] # ALBのSGを参照
+  security_groups    = [aws_security_group.alb_sg.id]                       # ALBのSGを参照
   subnets            = [for subnet in aws_subnet.public_subnet : subnet.id] # Public Subnetsを参照
 
   enable_deletion_protection = false
