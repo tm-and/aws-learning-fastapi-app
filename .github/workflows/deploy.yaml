@@ -17,6 +17,8 @@ env:
   ECS_CLUSTER_NAME: my-fastapi-app-cluster
   ECS_SERVICE_NAME: my-fastapi-app-service
   TERRAFORM_VERSION: 1.9.8
+  PRIVATE_SUBNET_IDS_STRING: ${{ vars.PRIVATE_SUBNET_IDS | join(',') }}
+  ECS_TASK_SG_ID_STRING: ${{ vars.ECS_TASK_SG_ID }}
 
 permissions:
   id-token: write # OIDC認証に必要な権限
@@ -296,7 +298,7 @@ jobs:
             --cluster "${{ env.ECS_CLUSTER_NAME }}" \
             --task-definition "$TASK_DEF_ARN" \
             --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[${{ vars.PRIVATE_SUBNET_IDS | join(',') }}],securityGroups=[${{ vars.ECS_TASK_SG_ID }}],assignPublicIp=DISABLED}" \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ env.PRIVATE_SUBNET_IDS_STRING }}],securityGroups=[${{ env.ECS_TASK_SG_ID_STRING }}],assignPublicIp=DISABLED}" \
             --override-container name="${{ env.PROJECT_NAME }}-container",command=["python","db_setup.py"] \
             --started-by "github-actions-migration"
 
