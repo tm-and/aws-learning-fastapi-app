@@ -17,8 +17,6 @@ env:
   ECS_CLUSTER_NAME: my-fastapi-app-cluster
   ECS_SERVICE_NAME: my-fastapi-app-service
   TERRAFORM_VERSION: 1.9.8
-  PRIVATE_SUBNET_IDS_STRING: ${{ vars.PRIVATE_SUBNET_IDS | join(',') }}
-  ECS_TASK_SG_ID_STRING: ${{ vars.ECS_TASK_SG_ID }}
 
 permissions:
   id-token: write # OIDC認証に必要な権限
@@ -290,6 +288,9 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Run Database Migration Task
+        env:
+          PRIVATE_SUBNET_IDS_STRING: ${{ vars.PRIVATE_SUBNET_IDS | join(',') }}
+          ECS_TASK_SG_ID_STRING: ${{ vars.ECS_TASK_SG_ID }}
         run: |
           TASK_DEF_ARN=$(aws ecs describe-task-definition --task-definition "${{ env.PROJECT_NAME }}-task-def" --query 'taskDefinition.taskDefinitionArn' --output text)
 
