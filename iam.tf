@@ -62,15 +62,15 @@ resource "aws_iam_role" "github_actions_tf_deploy_role" {
 
           "ForAnyValue:StringLike" = {
             "token.actions.githubusercontent.com:sub" : [
-              "repo:${var.github_repository_name}:ref:refs/heads/main",
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/main",
 
               # --- Pull Request イベントのパターン ---
-              "repo:${var.github_repository_name}:ref:refs/pull/*/head",  # PRのHEADコミット
-              "repo:${var.github_repository_name}:ref:refs/pull/*/merge", # PRのマージコミット
-              "repo:${var.github_repository_name}:pull_request",          # pull_request イベントの特殊パターン
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/head",  # PRのHEADコミット
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/merge", # PRのマージコミット
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:pull_request",          # pull_request イベントの特殊パターン
 
               # --- 環境デプロイのパターン ---
-              "repo:${var.github_repository_name}:environment:production" # 環境デプロイ用
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:environment:production" # 環境デプロイ用
 
 
             ]
@@ -124,11 +124,12 @@ resource "aws_iam_role" "github_actions_ecr_push_role" {
           # push イベント (refs/heads/*) と pull_request イベント (refs/pull/*) の両方を許可
           StringLike = {
             "token.actions.githubusercontent.com:sub" : [
-              "repo:${var.github_repository_name}:ref:refs/heads/*",
-              "repo:${var.github_repository_name}:pull_request",
-              # environment が指定されたジョブで発行される OIDC トークンの sub パターン
-              "repo:${var.github_repository_name}:environment:production"
 
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/main",
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/head",
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/merge",
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:pull_request",
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:environment:production"
 
             ]
           }
@@ -197,13 +198,13 @@ resource "aws_iam_role" "github_actions_ecs_deploy_role" {
           # push イベント (refs/heads/*) と pull_request イベント (refs/pull/*) の両方を許可
           "ForAnyValue:StringLike" = {
             "token.actions.githubusercontent.com:sub" : [
-              "repo:${var.github_repository_name}:ref:refs/heads/main",
-              "repo:${var.github_repository_name}:ref:refs/pull/*/head",
-              "repo:${var.github_repository_name}:ref:refs/pull/*/merge",
-              "repo:${var.github_repository_name}:pull_request",
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/main",
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/head",
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/merge",
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:pull_request",
 
               # environment が指定されたジョブで発行される OIDC トークンの sub パターン
-              "repo:${var.github_repository_name}:environment:production"
+              "repo:${var.github_repository_owner}/${var.github_repository_name}:environment:production"
 
             ]
           }
