@@ -271,8 +271,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: apply_infra
 
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && \
-        (contains(github.event.commits.*.modified, 'db_setup.py') || contains(github.event.commits.*.added, 'db_setup.py'))
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && (contains(github.event.commits.*.modified, 'db_setup.py') || contains(github.event.commits.*.added, 'db_setup.py'))
 
     environment: production
 
