@@ -577,7 +577,7 @@ resource "aws_db_instance" "rds_instance" {
   engine               = "postgres"
   engine_version       = "15.8"
   instance_class       = "db.t4g.micro"
-  db_name              = "${var.project_name}_db"
+  db_name              = "${replace(var.project_name, "-", "")}_db"
 
   username             = jsondecode(aws_secretsmanager_secret_version.rds_credentials_version.secret_string)["username"]
   password             = jsondecode(aws_secretsmanager_secret_version.rds_credentials_version.secret_string)["password"]
