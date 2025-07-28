@@ -262,3 +262,42 @@ jobs:
             --cluster ${{ env.ECS_CLUSTER_NAME }} \
             --service ${{ env.ECS_SERVICE_NAME }} \
             --force-new-deployment
+
+# ======================================================================
+# ★★★ここから新しいジョブを追加：データベースマイグレーション★★★
+# ======================================================================
+  migrate_db:
+    name: Run Database Migrations
+    runs-on: ubuntu-latest
+    needs: apply_infra
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && \
+        (contains(github.event.commits.*.modified, 'db_setup.py') || contains(github.event.commits.*.added, 'db_setup.py'))
+
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # --- AWS認証 (OIDC) for DB Migration Task ---
+      - name: Configure AWS Credentials for DB Migration
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.TF_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run Database Migration Task
+        run: |
+          TASK_DEF_ARN=$(aws ecs describe-task-definition --task-definition "${{ env.PROJECT_NAME }}-task-def" --query 'taskDefinition.taskDefinitionArn' --output text)
+
+          # マイグレーションタスクを実行
+          aws ecs run-task \
+            --cluster "${{ env.ECS_CLUSTER_NAME }}" \
+            --task-definition "$TASK_DEF_ARN" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ vars.PRIVATE_SUBNET_IDS | join(',') }}],securityGroups=[${{ vars.ECS_TASK_SG_ID }}],assignPublicIp=DISABLED}" \
+            --override-container name="${{ env.PROJECT_NAME }}-container",command=["python","db_setup.py"] \
+            --started-by "github-actions-migration"
+
+          echo "Database migration task started. Waiting for completion..."
