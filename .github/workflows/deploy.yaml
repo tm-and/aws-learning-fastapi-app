@@ -34,6 +34,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # --- ★★★ここから新しいデバッグステップを追加★★★ ---
+      - name: Debug - Show GitHub Repository Info
+        run: |
+          echo "GitHub Repository Owner: ${{ github.repository_owner }}"
+          echo "GitHub Repository Name: ${{ github.repository }}"
+      # --- ★★★ここまで新しいデバッグステップ★★★ ---
+
       # --- AWS認証 (OIDC) ---
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
