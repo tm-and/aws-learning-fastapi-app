@@ -290,7 +290,7 @@ jobs:
       - name: Run Database Migration Task
         run: |
 
-          PRIVATE_SUBNET_IDS_STRING_VALUE="${{ vars.PRIVATE_SUBNET_IDS | join(',') }}"
+          PRIVATE_SUBNET_IDS_STRING_VALUE="${{ join(vars.PRIVATE_SUBNET_IDS, ',') }}"
           ECS_TASK_SG_ID_STRING_VALUE="${{ vars.ECS_TASK_SG_ID }}"
 
           echo "DEBUG: PRIVATE_SUBNET_IDS_STRING_VALUE: $PRIVATE_SUBNET_IDS_STRING_VALUE"
