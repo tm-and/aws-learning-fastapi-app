@@ -56,15 +56,22 @@ resource "aws_iam_role" "github_actions_tf_deploy_role" {
             "token.actions.githubusercontent.com:aud" : "sts.amazonaws.com"
           },
           # ForAnyValue:StringLike で sub (Subject) 条件のパターンを網羅する
+          # 以下は、おそらくOIDC上うまくいかない可能性があり、明示的にmainじゃないとダメなのでは？という仮説
+          # また、StringLikeとForAnyValue:StringLikeでも違いがあるかも気になっている。
+          # "repo:${var.github_repository_name}:ref:refs/heads/*", # すべてのブランチ (push用)
+
           "ForAnyValue:StringLike" = {
             "token.actions.githubusercontent.com:sub" : [
               "repo:${var.github_repository_name}:ref:refs/heads/main",
-              "repo:${var.github_repository_name}:ref:refs/pull/*/head",
-              "repo:${var.github_repository_name}:ref:refs/pull/*/merge",
-              "repo:${var.github_repository_name}:pull_request",
 
-              # environment が指定されたジョブで発行される OIDC トークンの sub パターン
-              "repo:${var.github_repository_name}:environment:production"
+              # --- Pull Request イベントのパターン ---
+              "repo:${var.github_repository_name}:ref:refs/pull/*/head",  # PRのHEADコミット
+              "repo:${var.github_repository_name}:ref:refs/pull/*/merge", # PRのマージコミット
+              "repo:${var.github_repository_name}:pull_request",          # pull_request イベントの特殊パターン
+
+              # --- 環境デプロイのパターン ---
+              "repo:${var.github_repository_name}:environment:production" # 環境デプロイ用
+
 
             ]
           }
@@ -231,7 +238,7 @@ resource "aws_iam_role_policy" "github_actions_ecs_deploy_policy" {
         Action = [
           "ecs:UpdateService"
         ]
-        Resource = aws_ecs_service.app_service.id
+        Resource = "arn:aws:ecs:${var.aws_region}:${var.aws_account_id}:service/${aws_ecs_cluster.app_cluster.name}/${aws_ecs_service.app_service.name}"
       }
     ]
   })
