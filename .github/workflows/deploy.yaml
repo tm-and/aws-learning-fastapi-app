@@ -271,7 +271,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: apply_infra
 
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && (contains(github.event.commits.*.modified, 'db_setup.py') || contains(github.event.commits.*.added, 'db_setup.py'))
+    # Prodではalembicを使うこと。未適用分のみが実行されるため、CI/CDで何度失敗しても関係ないため
+
+    # if: github.event_name == 'push' && github.ref == 'refs/heads/main' && (contains(github.event.commits.*.modified, 'db_setup.py') || contains(github.event.commits.*.added, 'db_setup.py'))
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     environment: production
 
