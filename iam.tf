@@ -58,21 +58,14 @@ resource "aws_iam_role" "github_actions_tf_deploy_role" {
           # ForAnyValue:StringLike で sub (Subject) 条件のパターンを網羅する
           "ForAnyValue:StringLike" = {
             "token.actions.githubusercontent.com:sub" : [
-              # main ブランチへの通常の push
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/main",
+              "repo:${var.github_repository_name}:ref:refs/heads/main",
+              "repo:${var.github_repository_name}:ref:refs/pull/*/head",
+              "repo:${var.github_repository_name}:ref:refs/pull/*/merge",
+              "repo:${var.github_repository_name}:pull_request",
 
-              # Pull Request (PR) イベントの一般的なパターン (head ブランチのref)
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/head",
-
-              # Pull Request のマージコミットの ref パターン
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/merge",
-
-              # pull_request イベント時に使用される可能性のある別の sub クレームのパターン
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:pull_request",
-
-              # ★ここを追加★
               # environment が指定されたジョブで発行される OIDC トークンの sub パターン
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:environment:production"
+              "repo:${var.github_repository_name}:environment:production"
+
             ]
           }
         }
@@ -124,10 +117,12 @@ resource "aws_iam_role" "github_actions_ecr_push_role" {
           # push イベント (refs/heads/*) と pull_request イベント (refs/pull/*) の両方を許可
           StringLike = {
             "token.actions.githubusercontent.com:sub" : [
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/*", # pushイベント（ブランチ）用
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:pull_request",     # ★ pull_request イベント用（これが重要！）★
+              "repo:${var.github_repository_name}:ref:refs/heads/*",
+              "repo:${var.github_repository_name}:pull_request",
               # environment が指定されたジョブで発行される OIDC トークンの sub パターン
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:environment:production"
+              "repo:${var.github_repository_name}:environment:production"
+
+
             ]
           }
         }
@@ -195,21 +190,14 @@ resource "aws_iam_role" "github_actions_ecs_deploy_role" {
           # push イベント (refs/heads/*) と pull_request イベント (refs/pull/*) の両方を許可
           "ForAnyValue:StringLike" = {
             "token.actions.githubusercontent.com:sub" : [
-              # main ブランチへの通常の push
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/heads/main",
+              "repo:${var.github_repository_name}:ref:refs/heads/main",
+              "repo:${var.github_repository_name}:ref:refs/pull/*/head",
+              "repo:${var.github_repository_name}:ref:refs/pull/*/merge",
+              "repo:${var.github_repository_name}:pull_request",
 
-              # Pull Request (PR) イベントの一般的なパターン (head ブランチのref)
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/head",
-
-              # Pull Request のマージコミットの ref パターン
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:ref:refs/pull/*/merge",
-
-              # pull_request イベント時に使用される可能性のある別の sub クレームのパターン
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:pull_request",
-
-              # ★ここを追加★
               # environment が指定されたジョブで発行される OIDC トークンの sub パターン
-              "repo:${var.github_repository_owner}/${var.github_repository_name}:environment:production"
+              "repo:${var.github_repository_name}:environment:production"
+
             ]
           }
         }
