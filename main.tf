@@ -301,6 +301,25 @@ resource "aws_iam_role_policy" "ecs_task_execution_cloudwatch_logs" {
   })
 }
 
+# --- ECSタスク実行ロールにSecrets Managerからの読み取り権限を追加 ---
+resource "aws_iam_role_policy" "ecs_task_execution_secrets_manager_read" {
+  name = "${var.project_name}-ecs-task-execution-secrets-manager-read-policy"
+  role = aws_iam_role.ecs_task_execution_role.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = aws_secretsmanager_secret.rds_credentials.arn # 特定のシークレットに限定
+      }
+    ]
+  })
+}
+
+
 # ======================================================================
 # Container Registry (ECR)
 # ======================================================================
@@ -362,10 +381,33 @@ resource "aws_ecs_task_definition" "app_task_def" {
         }
       ]
 
+      secrets = [
+        {
+          name      = "DATABASE_USER"
+          valueFrom = "${aws_secretsmanager_secret.rds_credentials.arn}:username::" # JSONキー `username` を参照
+        },
+        {
+          name      = "DATABASE_PASSWORD"
+          valueFrom = "${aws_secretsmanager_secret.rds_credentials.arn}:password::" # JSONキー `password` を参照
+        }
+      ]
+
       environment = [
         {
           name  = "PORT"
           value = "8000"
+        },
+        {
+          name  = "DATABASE_HOST"
+          value = aws_db_instance.rds_instance.address
+        },
+        {
+          name  = "DATABASE_PORT"
+          value = tostring(aws_db_instance.rds_instance.port)
+        },
+        {
+          name  = "DATABASE_NAME"
+          value = aws_db_instance.rds_instance.db_name
         }
       ]
 
@@ -471,6 +513,83 @@ resource "aws_lb" "app_alb" {
 
   tags = {
     Name = "${var.project_name}-alb"
+  }
+}
+
+
+# --- RDS用のDBサブネットグループ ---
+# RDSインスタンスを配置するプライベートサブネットのグループ
+resource "aws_db_subnet_group" "rds_subnet_group" {
+  name       = "${var.project_name}-rds-subnet-group"
+  subnet_ids = [for subnet in aws_subnet.private_subnet : subnet.id] # プライベートサブネットを指定
+
+  tags = {
+    Name = "${var.project_name}-rds-subnet-group"
+  }
+}
+
+# --- RDS用のセキュリティグループ ---
+# ECSタスクからのDB接続 (5432ポート) を許可する
+resource "aws_security_group" "rds_sg" {
+  name        = "${var.project_name}-rds-sg"
+  description = "Allow PostgreSQL inbound traffic"
+  vpc_id      = aws_vpc.main.id
+
+  # ECSタスクのセキュリティグループからのインバウンド接続を許可
+  ingress {
+    from_port       = 5432 # PostgreSQLのポート
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs_task_sg.id]
+  }
+
+  tags = {
+    Name = "${var.project_name}-rds-sg"
+  }
+}
+
+# --- Secrets Manager for RDS Credentials ---
+# DBのマスターユーザー名とパスワードを安全に保存
+resource "aws_secretsmanager_secret" "rds_credentials" {
+  name = "${var.project_name}/rds/credentials"
+}
+
+# --- ランダムなパスワードを生成 ---
+resource "random_password" "rds_master_password" {
+  length           = 16
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"
+}
+
+# --- Secrets Managerに初期値を設定 ---
+# 生成したランダムパスワードと固定のユーザー名をシークレットに保存
+resource "aws_secretsmanager_secret_version" "rds_credentials_version" {
+  secret_id     = aws_secretsmanager_secret.rds_credentials.id
+  secret_string = jsonencode({
+    username = "postgres"
+    password = random_password.rds_master_password.result
+  })
+}
+
+# --- RDS PostgreSQL Instance ---
+resource "aws_db_instance" "rds_instance" {
+  allocated_storage    = 20
+  engine               = "postgres"
+  engine_version       = "15.8"
+  instance_class       = "db.t4g.micro"
+  db_name              = "${var.project_name}_db"
+
+  username             = jsondecode(aws_secretsmanager_secret_version.rds_credentials_version.secret_string)["username"]
+  password             = jsondecode(aws_secretsmanager_secret_version.rds_credentials_version.secret_string)["password"]
+
+  db_subnet_group_name   = aws_db_subnet_group.rds_subnet_group.name
+  vpc_security_group_ids = [aws_security_group.rds_sg.id]
+  skip_final_snapshot  = true
+  # backup_retention_period = 7 # 本番環境ではバックアップを設定
+  # multi_az             = true # 本番環境ではMulti-AZを有効化
+
+  tags = {
+    Name = "${var.project_name}-rds"
   }
 }
 
