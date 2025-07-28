@@ -114,7 +114,6 @@ jobs:
             -var="aws_account_id=${{ secrets.AWS_ACCOUNT_ID }}" \
             -var="aws_region=${{ env.AWS_REGION }}" \
             -var="project_name=${{ env.PROJECT_NAME }}" \
-            -var="github_repository_owner=${{ github.repository_owner }}" \
             -var="github_repository_name=${{ github.repository }}" \
 
             # `plan` の変更検知のために exit code を出力 (変更なし=0, 変更あり=2, エラー=1)
