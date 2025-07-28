@@ -14,6 +14,8 @@ env:
   ECR_REPOSITORY: my-fastapi-app-app-repo
   PUBLIC_SUBNET_CIDRS_JSON: ${{ toJson(vars.PUBLIC_SUBNET_CIDRS) }}
   PRIVATE_SUBNET_CIDRS_JSON: ${{ toJson(vars.PRIVATE_SUBNET_CIDRS) }}
+  ECS_CLUSTER_NAME: my-fastapi-app-cluster
+  ECS_SERVICE_NAME: my-fastapi-app-service
   TERRAFORM_VERSION: 1.9.8
 
 permissions:
@@ -115,7 +117,6 @@ jobs:
             -var="aws_region=${{ env.AWS_REGION }}" \
             -var="project_name=${{ env.PROJECT_NAME }}" \
             -var="github_repository_name=${{ github.repository }}" \
-
             # `plan` の変更検知のために exit code を出力 (変更なし=0, 変更あり=2, エラー=1)
             TF_PLAN_EXIT_CODE=$?
             echo "exit_code=$TF_PLAN_EXIT_CODE" >> $GITHUB_OUTPUT
