@@ -3,6 +3,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.declarative import declarative_base
+from pydantic import BaseModel
 
 # ----------------------------------------------------
 # 1. データベース接続設定
@@ -45,7 +46,14 @@ class User(Base):
 app = FastAPI()
 
 # ----------------------------------------------------
-# 4. DI (Dependency Injection) を使ってDBセッションを取得する関数
+# 4. Pydanticモデル定義 (リクエストボディの型)
+# ----------------------------------------------------
+class UserCreate(BaseModel):
+    username: str
+    email: str
+
+# ----------------------------------------------------
+# 5. DI (Dependency Injection) を使ってDBセッションを取得する関数
 # ----------------------------------------------------
 def get_db():
     db = SessionLocal()
@@ -55,15 +63,17 @@ def get_db():
         db.close()
 
 # ----------------------------------------------------
-# 5. APIエンドポイントの定義
+# 6. APIエンドポイントの定義
+# ★create_user エンドポイントを修正★
 # ----------------------------------------------------
 @app.get("/")
 async def read_root():
     return {"message": "Hello from FastAPI on ECS Fargate with RDS!"}
 
+# 引数を UserCreate モデルのインスタンスとして受け取る
 @app.post("/users/")
-async def create_user(username: str, email: str, db: Session = Depends(get_db)):
-    db_user = User(username=username, email=email)
+async def create_user(user: UserCreate, db: Session = Depends(get_db)): # ★引数を修正★
+    db_user = User(username=user.username, email=user.email) # ★参照方法を修正★
     db.add(db_user)
     db.commit()
     db.refresh(db_user)

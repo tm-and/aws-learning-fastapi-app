@@ -319,6 +319,28 @@ resource "aws_iam_role_policy" "ecs_task_execution_secrets_manager_read" {
   })
 }
 
+# --- ECSタスク実行ロールにSSM Session Manager権限を追加 ---
+# ECS Exec を有効にするために必要
+# AmazonSSMManagedInstanceCore の代わりに、より具体的な権限を付与する
+resource "aws_iam_role_policy" "ecs_task_execution_role_ecs_exec_policy" {
+  name = "${var.project_name}-ecs-task-execution-role-ecs-exec-policy"
+  role = aws_iam_role.ecs_task_execution_role.id # ecs_task_execution_role に付与
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+            "ssmmessages:CreateControlChannel",
+            "ssmmessages:CreateDataChannel",
+            "ssmmessages:OpenControlChannel",
+            "ssmmessages:OpenDataChannel"
+        ],
+        Resource = "*" # これらのアクションはリソースレベルの権限をサポートしないため *
+      }
+    ]
+  })
+}
 
 # ======================================================================
 # Container Registry (ECR)
@@ -347,6 +369,13 @@ data "aws_ecr_repository" "app_repo_data" {
 # --- ECS Cluster ---
 resource "aws_ecs_cluster" "app_cluster" {
   name = "${var.project_name}-cluster"
+
+  configuration {
+    execute_command_configuration {
+      logging = "DEFAULT" # または OVERRIDE
+    }
+  }
+
   tags = {
     Name = "${var.project_name}-cluster"
   }
@@ -355,7 +384,7 @@ resource "aws_ecs_cluster" "app_cluster" {
 # --- ECS Task Definition ---
 resource "aws_ecs_task_definition" "app_task_def" {
   family = "${var.project_name}-task-def"
-  # task_role_arn = aws_iam_role.ecs_task_execution_role.arn # Task Role (もし必要なら)
+  task_role_arn = aws_iam_role.ecs_task_execution_role.arn # Task Role (もし必要なら)
   execution_role_arn = aws_iam_role.ecs_task_execution_role.arn # Task Execution Role (Fargateで必須)
   network_mode       = "awsvpc"
 
@@ -431,6 +460,7 @@ resource "aws_ecs_service" "app_service" {
   task_definition = aws_ecs_task_definition.app_task_def.arn
   desired_count   = 1
   launch_type     = "FARGATE"
+  enable_execute_command = true
 
   network_configuration {
     assign_public_ip = false # プライベートサブネットに配置するため
@@ -551,7 +581,7 @@ resource "aws_security_group" "rds_sg" {
 # --- Secrets Manager for RDS Credentials ---
 # DBのマスターユーザー名とパスワードを安全に保存
 resource "aws_secretsmanager_secret" "rds_credentials" {
-  name = "${var.project_name}/rds/credentials"
+  name = "${var.project_name}/rds/credentials_02"
 }
 
 # --- ランダムなパスワードを生成 ---
@@ -564,7 +594,7 @@ resource "random_password" "rds_master_password" {
 # --- Secrets Managerに初期値を設定 ---
 # 生成したランダムパスワードと固定のユーザー名をシークレットに保存
 resource "aws_secretsmanager_secret_version" "rds_credentials_version" {
-  secret_id     = aws_secretsmanager_secret.rds_credentials.id
+  secret_id = aws_secretsmanager_secret.rds_credentials.id
   secret_string = jsonencode({
     username = "postgres"
     password = random_password.rds_master_password.result
@@ -573,18 +603,18 @@ resource "aws_secretsmanager_secret_version" "rds_credentials_version" {
 
 # --- RDS PostgreSQL Instance ---
 resource "aws_db_instance" "rds_instance" {
-  allocated_storage    = 20
-  engine               = "postgres"
-  engine_version       = "15.8"
-  instance_class       = "db.t4g.micro"
-  db_name              = "${replace(var.project_name, "-", "")}_db"
+  allocated_storage = 20
+  engine            = "postgres"
+  engine_version    = "15.8"
+  instance_class    = "db.t4g.micro"
+  db_name           = "${replace(var.project_name, "-", "")}_db"
 
-  username             = jsondecode(aws_secretsmanager_secret_version.rds_credentials_version.secret_string)["username"]
-  password             = jsondecode(aws_secretsmanager_secret_version.rds_credentials_version.secret_string)["password"]
+  username = jsondecode(aws_secretsmanager_secret_version.rds_credentials_version.secret_string)["username"]
+  password = jsondecode(aws_secretsmanager_secret_version.rds_credentials_version.secret_string)["password"]
 
   db_subnet_group_name   = aws_db_subnet_group.rds_subnet_group.name
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
-  skip_final_snapshot  = true
+  skip_final_snapshot    = true
   # backup_retention_period = 7 # 本番環境ではバックアップを設定
   # multi_az             = true # 本番環境ではMulti-AZを有効化
 
